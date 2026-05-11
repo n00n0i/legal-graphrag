@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-300 text-white;
+    font-family: 'IBM Plex Sans Thai', sans-serif;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #0f172a; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #475569; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg
+           font-medium transition-colors duration-200 flex items-center gap-2 disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply px-4 py-2 bg-dark-100 hover:bg-slate-700 text-white rounded-lg
+           font-medium transition-colors duration-200 border border-slate-600;
+  }
+  .btn-danger {
+    @apply px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg
+           font-medium transition-colors duration-200;
+  }
+  .card {
+    @apply bg-dark-100 rounded-xl border border-slate-700 p-6;
+  }
+  .input {
+    @apply w-full px-3 py-2 bg-dark-200 border border-slate-600 rounded-lg
+           text-white placeholder-slate-400 focus:outline-none focus:border-primary-500
+           focus:ring-1 focus:ring-primary-500 transition-colors;
+  }
+  .badge {
+    @apply px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-pending  { @apply bg-yellow-900 text-yellow-300; }
+  .badge-active   { @apply bg-green-900 text-green-300; }
+  .badge-rejected { @apply bg-red-900 text-red-300; }
+  .badge-suspended{ @apply bg-gray-700 text-gray-300; }
+  .badge-system   { @apply bg-blue-900 text-blue-300; }
+}
