@@ -45,6 +45,7 @@ from user_management import (
     PermissionCategory,
 )
 from api_key_endpoints import router as api_key_router
+from openai_anthropic_compat import router as compat_router
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -300,6 +301,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Legal GraphRAG API", version="0.3.0", lifespan=lifespan)
 
 app.include_router(api_key_router)
+app.include_router(compat_router)
 
 app.add_middleware(
     CORSMiddleware,
