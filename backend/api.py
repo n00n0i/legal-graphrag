@@ -44,6 +44,7 @@ from user_management import (
     Permission, Role, User,
     PermissionCategory,
 )
+from api_key_endpoints import router as api_key_router
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -126,19 +127,36 @@ def get_user_from_token(authorization: str = None) -> User:
     except HTTPException:
         pass
 
-    # Try API key format: lg_xxx
-    if token.startswith("lg_"):
-        # Look up user by API key hash
+    # Try API key format: lgk_xxx
+    if token.startswith("lgk_"):
+        # Look up user by API key hash from Neo4j
         key_hash = hash_api_key(token)
-        # This would be checked against DB
-        # For now, treat as service key with admin role
-        return User(
-            user_id="service",
-            email="service@system",
-            name="Service Account",
-            role_id="admin",
-            status="active",
-        )
+        try:
+            driver = get_neo4j()
+            with driver.session() as session:
+                result = session.run("""
+                    MATCH (u:User)-[:HAS_API_KEY]->(k:ApiKey {key_hash: $hash, is_active: true})
+                    WHERE k.expires_at IS NULL OR k.expires_at > datetime()
+                    RETURN u.user_id as uid, u.email as email, u.name as name,
+                           u.role_id as role, k.tier as tier, k.rate_limit_rpm as rpm
+                    LIMIT 1
+                """, hash=key_hash).single()
+                if result:
+                    # Update last_used_at
+                    session.run("""
+                        MATCH (u:User)-[:HAS_API_KEY]->(k:ApiKey {key_hash: $hash})
+                        SET k.last_used_at = datetime()
+                    """, hash=key_hash)
+                    return User(
+                        user_id=result["uid"],
+                        email=result["email"] or "",
+                        name=result["name"] or "",
+                        role_id=result["role"],
+                        status="active",
+                    )
+        except Exception:
+            pass
+        raise HTTPException(status_code=401, detail="Invalid or inactive API key")
 
     raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -279,7 +297,9 @@ async def lifespan(app: FastAPI):
     print("[API] Shutting down...")
 
 
-app = FastAPI(title="Legal GraphRAG API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Legal GraphRAG API", version="0.3.0", lifespan=lifespan)
+
+app.include_router(api_key_router)
 
 app.add_middleware(
     CORSMiddleware,

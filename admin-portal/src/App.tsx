@@ -1,6 +1,9 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom'
 import { User, UserStatus } from './types'
+import ApiKeysPage from './pages/ApiKeysPage'
+import ApiKeyRequestsPage from './pages/ApiKeyRequestsPage'
+import DocAccessPage from './pages/DocAccessPage'
 
 // ─── Auth Context ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -35,6 +38,11 @@ function Sidebar() {
     { path: '/users', label: '👥 จัดการผู้ใช้', icon: '👥', adminOnly: true },
     { path: '/roles', label: '🔐 จัดการสิทธิ์', icon: '🔐', adminOnly: true },
     { path: '/docs', label: '📄 จัดการเอกสาร', icon: '📄', adminOnly: true },
+    { path: '/api-keys', label: '🔑 API Keys', icon: '🔑', adminOnly: true },
+    { path: '/api-key-requests', label: '📨 คำขอ API Key', icon: '📨', adminOnly: true },
+    { path: '/doc-access', label: '📋 เข้าถึงเอกสาร', icon: '📋', adminOnly: true },
+    { path: '/graph', label: '🕸️ Graph', icon: '🕸️', adminOnly: true },
+    { path: '/vector', label: '🔢 Vector Store', icon: '🔢', adminOnly: true },
     { path: '/stats', label: '📊 สถิติ', icon: '📊', adminOnly: true },
   ]
 
@@ -688,6 +696,11 @@ export default function App() {
             <Route path="users" element={<UsersPage />} />
             <Route path="roles" element={<RolesPage />} />
             <Route path="docs" element={<DocsPage />} />
+            <Route path="api-keys" element={<ApiKeysPage />} />
+            <Route path="api-key-requests" element={<ApiKeyRequestsPage />} />
+            <Route path="doc-access" element={<DocAccessPage />} />
+            <Route path="graph" element={<div className="p-8 text-slate-400">🕸️ Graph — coming soon</div>} />
+            <Route path="vector" element={<div className="p-8 text-slate-400">🔢 Vector Store — coming soon</div>} />
             <Route path="stats" element={<StatsPage />} />
           </Route>
         </Routes>

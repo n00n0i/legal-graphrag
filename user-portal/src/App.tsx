@@ -1,6 +1,9 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom'
 import { User, UserStatus } from './types'
+import RequestApiKeyPage from './pages/RequestApiKeyPage'
+import MyApiKeysPage from './pages/MyApiKeysPage'
+import MyDocAccessPage from './pages/MyDocAccessPage'
 
 // ─── Auth Context ─────────────────────────────────────────────────────────────
 interface AuthContextType {
@@ -32,10 +35,9 @@ function Sidebar() {
 
   const navItems = [
     { path: '/chat', label: '💬 ถาม-ตอบกฎหมาย', icon: '💬' },
-    { path: '/users', label: '👥 จัดการผู้ใช้', icon: '👥', adminOnly: true },
-    { path: '/roles', label: '🔐 จัดการสิทธิ์', icon: '🔐', adminOnly: true },
-    { path: '/docs', label: '📄 จัดการเอกสาร', icon: '📄', adminOnly: true },
-    { path: '/stats', label: '📊 สถิติ', icon: '📊', adminOnly: true },
+    { path: '/request-api-key', label: '🔑 ขอ API Key', icon: '🔑' },
+    { path: '/my-api-keys', label: '🔑 My API Keys', icon: '🔑' },
+    { path: '/my-doc-access', label: '📋 เอกสารที่เข้าถึงได้', icon: '📋' },
   ]
 
   return (
@@ -685,6 +687,9 @@ export default function App() {
           <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
             <Route index element={<Navigate to="/chat" />} />
             <Route path="chat" element={<ChatPage />} />
+            <Route path="request-api-key" element={<RequestApiKeyPage />} />
+            <Route path="my-api-keys" element={<MyApiKeysPage />} />
+            <Route path="my-doc-access" element={<MyDocAccessPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="roles" element={<RolesPage />} />
             <Route path="docs" element={<DocsPage />} />
