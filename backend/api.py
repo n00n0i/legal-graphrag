@@ -15,7 +15,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
+import os as _os
+_load_dotenv = load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 from neo4j import GraphDatabase
 from qdrant_client import QdrantClient
 import openai
@@ -42,9 +45,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 24
 
-    class Config:
-        env_file = ".env"
-
+model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 settings = Settings()
 
@@ -221,13 +226,13 @@ async def list_conversations(
 
 @app.post("/api/v1/conversations")
 async def create_conversation(
-    title: Optional[str] = Body(None),
+    body: Optional[dict] = Body(None),
     user: User = Depends(get_current_user),
 ):
     """Create a new conversation thread."""
     neo4j = get_neo4j()
     conv_id = str(uuid.uuid4())
-    title = title or "New conversation"
+    title = (body or {}).get("title") or "New conversation"
     with neo4j.session() as session:
         session.run("""
             CREATE (c:Conversation {

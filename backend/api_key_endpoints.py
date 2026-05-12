@@ -14,9 +14,15 @@ from enum import Enum
 router = APIRouter(prefix="/api/v1", tags=["api_key", "doc_access"])
 
 
-def get_current_user():
+# Import lazily to avoid circular import at module load time.
+# Define as async def so FastAPI's Depends() knows to await it at request time.
+# Inside, we import the real get_current_user (also async) and await it.
+from fastapi import Header
+from typing import Optional
+
+async def get_current_user(authorization: Optional[str] = Header(None)):
     from api import get_current_user as gcu
-    return gcu
+    return await gcu(authorization=authorization)
 
 
 def get_neo4j():
@@ -73,7 +79,7 @@ async def request_api_key(body: ApiKeyRequestCreate, user: User = Depends(get_cu
         existing = session.run("""
             MATCH (u:User {user_id: $uid})-[:REQUESTED_API_KEY]->(r:ApiKeyRequest {status: 'pending'})
             RETURN r.id as id
-        """, uid=user.user_id).single()
+        """, uid=user.user_id).data()
         if existing:
             raise HTTPException(status_code=409, detail="Already have a pending request")
         req_id = str(uuid.uuid4())
@@ -97,7 +103,7 @@ async def my_api_key_requests(user: User = Depends(get_current_user)):
             RETURN r.id as id, r.tier as tier, r.name as name, r.status as status,
                    r.created_at as created_at
             ORDER BY r.created_at DESC
-        """, uid=user.user_id).fetch()
+        """, uid=user.user_id).data()
     return [{"id": r["id"], "tier": r["tier"], "name": r["name"],
              "status": r["status"], "created_at": str(r["created_at"])} for r in result]
 
@@ -112,7 +118,7 @@ async def my_api_keys(user: User = Depends(get_current_user)):
                    k.expires_at as expires_at, k.rate_limit_rpm as rpm,
                    k.created_at as created_at, k.last_used_at as last_used
             ORDER BY k.created_at DESC
-        """, uid=user.user_id).fetch()
+        """, uid=user.user_id).data()
     return [{"id": r["id"], "name": r["name"], "tier": r["tier"],
              "is_active": r["is_active"], "expires_at": str(r["expires_at"]) if r["expires_at"] else None,
              "rate_limit_rpm": r["rpm"], "created_at": str(r["created_at"]),
@@ -147,7 +153,7 @@ async def list_pending_requests(user: User = Depends(get_current_user)):
             RETURN r.id as id, u.user_id as uid, u.email as email, u.name as uname,
                    r.tier as tier, r.name as key_name, r.created_at as created_at
             ORDER BY r.created_at ASC
-        """).fetch()
+        """).data()
     return [{"request_id": r["id"], "user_id": r["uid"], "email": r["email"],
              "name": r["uname"], "tier": r["tier"], "key_name": r["key_name"],
              "created_at": str(r["created_at"])} for r in result]
@@ -218,7 +224,7 @@ async def list_all_api_keys(user: User = Depends(get_current_user)):
                    k.last_used_at as last_used
             ORDER BY k.created_at DESC
             LIMIT 100
-        """).fetch()
+        """).data()
     return [{"id": r["id"], "user_id": r["uid"], "email": r["email"],
              "name": r["name"], "tier": r["tier"], "is_active": r["active"],
              "rate_limit_rpm": r["rpm"], "created_at": str(r["created"]),
@@ -238,7 +244,7 @@ async def list_all_doc_access(user: User = Depends(get_current_user)):
             MATCH (u:User)-[:HAS_ACCESS]->(d:Document)
             RETURN u.user_id as uid, u.email as email, d.id as did,
                    d.title as dtitle, d.access_level as level
-        """).fetch()
+        """).data()
     return [{"user_id": r["uid"], "email": r["email"],
              "document_id": r["did"], "document_title": r["dtitle"],
              "access_level": r["level"]} for r in result]
@@ -290,7 +296,7 @@ async def my_doc_access(user: User = Depends(get_current_user)):
             MATCH (u:User {user_id: $uid})-[:HAS_ACCESS]->(d:Document)
             RETURN d.id as id, d.title as title, d.uploaded_by as uploaded_by,
                    d.access_level as level, d.uploaded_at as uploaded_at
-        """, uid=user.user_id).fetch()
+        """, uid=user.user_id).data()
     return [{"document_id": r["id"], "title": r["title"],
              "uploaded_by": r["uploaded_by"], "access_level": r["level"],
              "uploaded_at": str(r["uploaded_at"]) if r["uploaded_at"] else None}
