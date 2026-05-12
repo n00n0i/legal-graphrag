@@ -274,7 +274,7 @@ async def get_conversation_messages(
             RETURN m.id as id, m.role as role, m.content as content, m.created_at as ca
             ORDER BY m.created_at ASC
             LIMIT $limit
-        """, cid=conv_id, uid=user.user_id, limit=limit).fetch()
+        """, cid=conv_id, uid=user.user_id, limit=limit).data()
     return [
         {"id": r["id"], "role": r["role"], "content": r["content"],
          "created_at": str(r["ca"]) if r["ca"] else None}
@@ -338,8 +338,7 @@ async def query(req: QueryRequest, user: User = Depends(get_current_user)):
                 messages = [{"role": r["role"], "content": r["content"]} for r in hist]
     messages.append({"role": "user", "content": req.question})
     try:
-        answer = await run_pipeline(req.question, req.collection or "legal_default",
-                                     req.limit or 5, messages)
+        answer = await run_pipeline(req.question, user, req.limit or 5, messages)
     except Exception as e:
         answer = f"Error: {e}"
     if conv_id and answer:
