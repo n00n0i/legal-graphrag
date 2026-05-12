@@ -46,6 +46,8 @@ from user_management import (
 )
 from api_key_endpoints import router as api_key_router
 from openai_anthropic_compat import router as compat_router
+from document_endpoints import router as doc_router
+from neo4j_qdrant_endpoints import router as admin_browse_router
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -302,6 +304,8 @@ app = FastAPI(title="Legal GraphRAG API", version="0.3.0", lifespan=lifespan)
 
 app.include_router(api_key_router)
 app.include_router(compat_router)
+app.include_router(doc_router)
+app.include_router(admin_browse_router)
 
 app.add_middleware(
     CORSMiddleware,

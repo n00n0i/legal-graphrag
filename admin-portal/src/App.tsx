@@ -1,6 +1,9 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom'
 import { User, UserStatus } from './types'
+import DocsPage from './pages/DocsPage'
+import GraphPage from './pages/GraphPage'
+import VectorStorePage from './pages/VectorStorePage'
 import ApiKeysPage from './pages/ApiKeysPage'
 import ApiKeyRequestsPage from './pages/ApiKeyRequestsPage'
 import DocAccessPage from './pages/DocAccessPage'
@@ -699,8 +702,8 @@ export default function App() {
             <Route path="api-keys" element={<ApiKeysPage />} />
             <Route path="api-key-requests" element={<ApiKeyRequestsPage />} />
             <Route path="doc-access" element={<DocAccessPage />} />
-            <Route path="graph" element={<div className="p-8 text-slate-400">🕸️ Graph — coming soon</div>} />
-            <Route path="vector" element={<div className="p-8 text-slate-400">🔢 Vector Store — coming soon</div>} />
+            <Route path="graph" element={<GraphPage />} />
+            <Route path="vector" element={<VectorStorePage />} />
             <Route path="stats" element={<StatsPage />} />
           </Route>
         </Routes>
