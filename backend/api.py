@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6335"
     qdrant_api_key: Optional[str] = None
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    openai_base_url: Optional[str] = os.getenv("OPENAI_BASE_URL", None)
+    openai_model: Optional[str] = os.getenv("OPENAI_MODEL", None)
     jwt_secret: str = os.getenv("JWT_SECRET", "dev-secret-change-in-prod")
     jwt_algorithm: str = "HS256"
     jwt_expiry_hours: int = 24
@@ -379,7 +381,8 @@ async def query_stream(req: QueryRequest, user: User = Depends(get_current_user)
         full = ""
         try:
             async for token in synthesis_stream(user, req.question, "context_placeholder",
-                                                "gpt-4o", 0.3, 1024, "openai"):
+                                                settings.openai_model or "gemma4:31b-cloud",
+                                                0.3, 1024, "openai"):
                 full += token
                 yield f"data: {token}\n\n"
             yield "event: done\ndata: [DONE]\n\n"

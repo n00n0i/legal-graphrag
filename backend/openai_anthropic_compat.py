@@ -96,14 +96,18 @@ def synthesis_stream(user: User, question: str, context: str,
         return stream_anthropic()
 
     else:
-        # OpenAI streaming
-        openai_client = openai.OpenAI(api_key=settings.openai_api_key)
+        # OpenAI-compatible (Ollama Cloud, etc.)
+        openai_client = openai.OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or "https://api.openai.com/v1",
+        )
+        model_name = model or settings.openai_model or "gpt-4o"
         system_msg = {"role": "system", "content": system_prompt}
 
         async def stream_openai():
             try:
                 stream = openai_client.chat.completions.create(
-                    model=model or "gpt-4o",
+                    model=model_name,
                     messages=[system_msg, {"role": "user", "content": user_content}],
                     temperature=temperature or 0.3,
                     max_tokens=max_tokens or 1000,
@@ -147,10 +151,13 @@ async def synthesis_nonstream(user: User, question: str, context: str,
             return f"(Anthropic LLM unavailable: {e})\n\nข้อมูลที่พบ: {context[:500]}"
 
     else:
-        openai_client = openai.OpenAI(api_key=settings.openai_api_key)
+        openai_client = openai.OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or "https://api.openai.com/v1",
+        )
         try:
             resp = openai_client.chat.completions.create(
-                model=model or "gpt-4o",
+                model=model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},
@@ -462,11 +469,15 @@ async def _stream_sse(question: str, context: str,
         return stream_anthropic()
 
     else:
-        openai_client = openai.OpenAI(api_key=settings.openai_api_key)
+        openai_client = openai.OpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or "https://api.openai.com/v1",
+        )
+        model_name = model or settings.openai_model or "gpt-4o"
         async def stream_openai():
             try:
                 stream = openai_client.chat.completions.create(
-                    model=model or "gpt-4o",
+                    model=model_name,
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_content},
