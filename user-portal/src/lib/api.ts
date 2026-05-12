@@ -139,3 +139,74 @@ export async function initRBAC(token: string) {
   if (!res.ok) throw new Error('Failed to init RBAC')
   return res.json()
 }
+
+// ── Conversations ─────────────────────────────────────────────────────────────
+
+export async function listConversations(token: string) {
+  const res = await fetch(`${API_BASE}/conversations`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Failed to list conversations')
+  return res.json()
+}
+
+export async function createConversation(token: string, body: object) {
+  const res = await fetch(`${API_BASE}/conversations`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error('Failed to create conversation')
+  return res.json()
+}
+
+export async function getConversationMessages(convId: string, token: string) {
+  const res = await fetch(`${API_BASE}/conversations/${convId}/messages`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error('Failed to get messages')
+  return res.json()
+}
+
+export async function queryStream(
+  question: string,
+  token: string,
+  conversationId: string | null,
+  onToken: (token: string) => void,
+  onDone: (done: boolean, latency: number, conv_id: string) => void,
+) {
+  const res = await fetch(`${API_BASE}/query/stream`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, conversation_id: conversationId }),
+  })
+
+  if (!res.ok) throw new Error('Query stream failed')
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('No response body')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let conv_id = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      try {
+        const data = JSON.parse(line.slice(6))
+        if (data.token) onToken(data.token)
+        if (data.done) onDone(true, data.latency_ms, data.conv_id || '')
+        if (data.error) throw new Error(data.error)
+        if (data.latency_ms !== undefined && !data.done) conv_id = data.conv_id || ''
+      } catch {}
+    }
+  }
+}

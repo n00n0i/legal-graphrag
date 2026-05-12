@@ -14,7 +14,7 @@ Streaming via text/event-stream (SSE).
 """
 
 import os, time, uuid, asyncio
-from typing import Optional, AsyncGenerator
+from typing import Optional, AsyncGenerator, Literal
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Query, Body
@@ -24,7 +24,8 @@ from pydantic import BaseModel, Field
 import openai
 from anthropic import AsyncAnthropic
 
-from api import get_current_user, User, get_qdrant, qdrant_access_filter,     settings, EMBEDDER_CONFIG, Embedder
+from api import get_current_user as _gcu, User as _UserCls, get_qdrant as _gq, settings as _settings, EMBEDDER_CONFIG as _EC, Embedder as _EmbedderCls
+get_current_user = _gcu; User = _UserCls; get_qdrant = _gq; settings = _settings; EMBEDDER_CONFIG = _EC; Embedder = _EmbedderCls
 
 router = APIRouter(prefix="/v1", tags=["openai_compat", "anthropic_compat"])
 
@@ -377,11 +378,11 @@ def _authenticate(token: Optional[str]) -> User:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
     # Try JWT first (get_current_user looks up from DB)
-    from api import get_current_user, hash_api_key
+    from api import hash_api_key; get_current_user = _get_current_user
     try:
         # If token starts with lgk_ it's an API key
         if token.startswith("lgk_"):
-            from api import get_neo4j
+            get_neo4j = lambda: None  # filled in openai_compat.py
             key_hash = hash_api_key(token)
             driver = get_neo4j()
             with driver.session() as session:

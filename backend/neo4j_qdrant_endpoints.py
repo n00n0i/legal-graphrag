@@ -1,183 +1,105 @@
 """
-Legal GraphRAG — Neo4j + Qdrant Admin Endpoints
-===============================================
-Admin-only: graph stats, cypher query, qdrant browse
+Legal GraphRAG — Neo4j + Qdrant Admin Browse Endpoints
+=======================================================
 """
-
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from neo4j import GraphDatabase
 
-from api import get_current_user, User, get_neo4j, get_qdrant
-from user_management import rbac_check
+from api import get_neo4j, get_qdrant
+from user_management import User
 
-router = APIRouter(prefix="/api/v1/admin", tags=["admin", "neo4j", "qdrant"])
+router = APIRouter(prefix="/api/v1", tags=["admin_browse"])
 
-# ─── Neo4j ──────────────────────────────────────────────────
 
-class CypherRequest(BaseModel):
-    query: str
-    limit: Optional[int] = 100
+def get_current_user():
+    """Lazy import to avoid circular dependency with api.py."""
+    from api import get_current_user as gcu
+    return gcu
 
+
+def rbac_check(user: User, permission: str):
+    if user.role_id == "admin":
+        return
+    raise HTTPException(status_code=403, detail=f"Permission denied: {permission}")
+
+
+# ─── Neo4j ───────────────────────────────────────────────────────────────────
 
 @router.get("/neo4j/stats")
 async def neo4j_stats(user: User = Depends(get_current_user)):
-    """Get Neo4j graph stats: node count, rel count, labels."""
     rbac_check(user, "neo4j:read")
-
     neo4j = get_neo4j()
-    try:
-        with neo4j.session() as session:
-            # Node + rel counts
-            node_count = session.run("MATCH (n) RETURN count(n) as count").single()["count"]
-            rel_count = session.run("MATCH ()-[r]->() RETURN count(r) as count").single()["count"]
-
-            # Label breakdown
-            label_result = session.run("""
-                MATCH (n)
-                UNWIND labels(n) as label
-                RETURN label, count(n) as count
-                ORDER BY count DESC
-                LIMIT 50
-            """)
-            labels = [{"label": r["label"], "count": r["count"]} for r in label_result]
-
-            return {
-                "total_nodes": node_count,
-                "total_relationships": rel_count,
-                "labels": labels,
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with neo4j.session() as session:
+        node_count = session.run("MATCH (n) RETURN count(n) as count").single()["count"]
+        rel_count = session.run("MATCH ()-[r]->() RETURN count(r) as count").single()["count"]
+        labels = session.run("CALL db.labels()").fetch()
+        label_counts = {}
+        for row in labels:
+            lbl = row["label"]
+            cnt = session.run(f"MATCH (n:`{lbl}`) RETURN count(n) as cnt").single()["cnt"]
+            label_counts[lbl] = cnt
+    return {"nodes": node_count, "relationships": rel_count, "labels": label_counts}
 
 
 @router.post("/neo4j/cypher")
-async def neo4j_cypher(
-    body: CypherRequest,
+async def run_cypher(
+    query: str,
     user: User = Depends(get_current_user),
 ):
-    """Run arbitrary Cypher query. Admin only."""
     rbac_check(user, "neo4j:write")
-
-    # Disallow dangerous commands
-    disallowed = ["DROP", "DELETE", "REMOVE", "DETACH"]
-    for kw in disallowed:
-        # Allow SELECT-like read but flag mutation
-        if kw in body.query.upper() and body.query.strip().upper().startswith(kw):
-            raise HTTPException(status_code=400, detail=f"Forbidden keyword: {kw}")
-
     neo4j = get_neo4j()
-    try:
-        with neo4j.session() as session:
-            result = session.run(body.query, limit=body.limit)
-            records = [dict(r) for r in result]
-            return {
-                "columns": list(result.keys()) if records else [],
-                "data": records,
-                "count": len(records),
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    with neo4j.session() as session:
+        try:
+            result = session.run(query).fetch()
+            return {"columns": result[0].keys() if result else [], "rows": [dict(r) for r in result]}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
-# ─── Qdrant ──────────────────────────────────────────────────
+# ─── Qdrant ───────────────────────────────────────────────────────────────────
 
 @router.get("/qdrant/collections")
-async def qdrant_collections(user: User = Depends(get_current_user)):
-    """List all Qdrant collections with stats."""
+async def list_collections(user: User = Depends(get_current_user)):
     rbac_check(user, "qdrant:read")
-
     qdrant = get_qdrant()
     try:
-        cols = qdrant.get_collections()
-        result = []
-        for c in cols.collections:
-            info = qdrant.get_collection(c.name)
-            result.append({
-                "name": c.name,
-                "points_count": info.points_count,
-                "vectors_count": info.vectors_count,
-                "status": info.status,
-            })
-        return result
+        cols = qdrant.get_collections().collections
+        return [{"name": c.name, "vectors_count": getattr(c, 'vectors_count', 0),
+                 "points_count": getattr(c, 'points_count', 0)} for c in cols]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/qdrant/collections/{collection}/points")
-async def qdrant_points(
-    collection: str,
-    limit: int = 20,
-    offset: int = 0,
+@router.get("/qdrant/collections/{name}/points")
+async def get_collection_points(
+    name: str,
+    limit: int = Query(10, le=100),
+    offset: int = Query(0, ge=0),
     user: User = Depends(get_current_user),
 ):
-    """Browse points in a collection."""
     rbac_check(user, "qdrant:read")
-
     qdrant = get_qdrant()
     try:
-        results = qdrant.scroll(
-            collection_name=collection,
-            limit=limit,
-            offset=offset,
-            with_payload=True,
-            with_vectors=False,
-        )
-        points = []
-        for pid, payload in zip(results[0], results[1]):
-            # Qdrant scroll returns (ids, payloads, vectors, offset)
-            # Handle both formats
-            if isinstance(pid, tuple):
-                points.append({"id": str(pid[0]), "payload": pid[1] if len(pid) > 1 else {}})
-            else:
-                points.append({"id": str(pid), "payload": payload if isinstance(payload, dict) else {}})
-
-        from qdrant_client.models import ScrollResponse
-        if isinstance(results, ScrollResponse):
-            return results.points
-
-        return points
+        scroll = qdrant.scroll(collection_name=name, limit=limit, offset=offset)
+        points = scroll[0] if scroll else []
+        return {
+            "collection": name,
+            "total": len(points),
+            "points": [{"id": p.id, "vector": list(p.vector)[:5] if hasattr(p, 'vector') else [],
+                        "payload": p.payload} for p in points],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/qdrant/collections/{collection}")
-async def qdrant_delete_collection(
-    collection: str,
-    user: User = Depends(get_current_user),
-):
-    """Delete a collection. Admin only."""
-    rbac_check(user, "qdrant:write")
-
+@router.delete("/qdrant/collections/{name}")
+async def delete_collection(name: str, user: User = Depends(get_current_user)):
+    rbac_check(user, "qdrant:delete")
     qdrant = get_qdrant()
     try:
-        qdrant.delete_collection(collection_name=collection)
-        return {"collection": collection, "status": "deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.delete("/qdrant/points/{collection}/{point_id}")
-async def qdrant_delete_point(
-    collection: str,
-    point_id: str,
-    user: User = Depends(get_current_user),
-):
-    """Delete a specific point. Admin only."""
-    rbac_check(user, "qdrant:write")
-
-    qdrant = get_qdrant()
-    try:
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        qdrant.delete(
-            collection_name=collection,
-            points_selector={
-                "filter": Filter(must=[
-                    FieldCondition(key="id", match=MatchValue(value=point_id))
-                ])
-            }
-        )
-        return {"point_id": point_id, "status": "deleted"}
+        qdrant.delete_collection(collection_name=name)
+        return {"ok": True, "collection": name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

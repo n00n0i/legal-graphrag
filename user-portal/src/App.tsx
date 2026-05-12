@@ -197,11 +197,55 @@ function LoginPage() {
 }
 
 function ChatPage() {
+  const [conversations, setConversations] = useState<any[]>([])
+  const [activeConvId, setActiveConvId] = useState<string | null>(null)
+  const [conversationsLoaded, setConversationsLoaded] = useState(false)
   const [question, setQuestion] = useState('')
   const [messages, setMessages] = useState<{ role: string; content: string }[]>([])
   const [loading, setLoading] = useState(false)
   const [latency, setLatency] = useState<number | null>(null)
   const { token } = useAuth()
+
+  // Load conversation list on mount
+  useEffect(() => {
+    if (!token || conversationsLoaded) return
+    import('./lib/api').then(({ listConversations }) => {
+      listConversations(token).then(data => {
+        setConversations(data.conversations || [])
+        setConversationsLoaded(true)
+      }).catch(() => setConversationsLoaded(true))
+    })
+  }, [token, conversationsLoaded])
+
+  // Load messages when switching conversations
+  const loadConversation = (convId: string) => {
+    setActiveConvId(convId)
+    setLoading(true)
+    import('./lib/api').then(({ getConversationMessages }) => {
+      getConversationMessages(convId, token!).then(data => {
+        const msgs = (data.messages || []).map((m: any) => ({
+          role: m.role === 'assistant' ? 'assistant' : m.role,
+          content: m.content,
+        }))
+        setMessages(msgs)
+        setLoading(false)
+      }).catch(() => { setMessages([]); setLoading(false) })
+    })
+  }
+
+  const startNewChat = async () => {
+    setActiveConvId(null)
+    setMessages([])
+    if (!token) return
+    try {
+      const { createConversation } = await import('./lib/api')
+      const data = await createConversation(token, {})
+      if (data.id) {
+        setConversations(prev => [{ id: data.id, title: data.title }, ...prev])
+        setActiveConvId(data.id)
+      }
+    } catch {}
+  }
 
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -212,77 +256,142 @@ function ChatPage() {
     setQuestion('')
     setLoading(true)
 
+    // Build assistant placeholder
+    const assistantId = Date.now()
+    setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+
     try {
-      const { query } = await import('./lib/api')
-      const result = await query(userMsg, token!)
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: result.answer + '\n\n⏱ ' + result.latency_ms + 'ms'
-      }])
-      setLatency(result.latency_ms)
+      const { queryStream } = await import('./lib/api')
+      await queryStream(
+        userMsg,
+        token!,
+        activeConvId,
+        (token: string) => {
+          setMessages(prev => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = { ...last, content: last.content + token }
+            }
+            return updated
+          })
+        },
+        (done: boolean, lat: number, conv_id: string) => {
+          if (done) {
+            setLatency(lat)
+            setLoading(false)
+            if (!activeConvId && conv_id) {
+              setActiveConvId(conv_id)
+              setConversationsLoaded(false) // refresh list
+            }
+          }
+        }
+      )
     } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'error', content: err.message }])
-    } finally {
+      setMessages(prev => {
+        const updated = [...prev]
+        const last = updated[updated.length - 1]
+        if (last && last.role === 'assistant') last.content += `\n[Error: ${err.message}]`
+        return updated
+      })
       setLoading(false)
     }
   }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">💬 ถาม-ตอบกฎหมาย</h1>
-        <p className="text-slate-400 text-sm mt-1">ถามเป็นภาษาไทย ได้คำตอบพร้อมอ้างอิงมาตรา</p>
-      </div>
-
-      {/* Chat */}
-      <div className="card min-h-[400px] flex flex-col mb-4">
-        <div className="flex-1 space-y-4 mb-4 overflow-y-auto">
-          {messages.length === 0 && (
-            <div className="text-center text-slate-500 py-12">
-              <p className="text-4xl mb-3">⚖️</p>
-              <p>เริ่มต้นถามคำถามกฎหมายได้เลย</p>
-              <p className="text-sm mt-1">เช่น "พ.ร.บ. ข้อมูลข่าวสาร มาตรา 7 บอกอะไร?"</p>
-            </div>
-          )}
-
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-xl px-4 py-3 ${
-                msg.role === 'user' ? 'bg-primary-600 text-white' :
-                msg.role === 'error' ? 'bg-red-900/50 text-red-300 border border-red-700' :
-                'bg-dark-100 text-slate-100 border border-slate-600'
-              }`}>
-                <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
-              </div>
-            </div>
-          ))}
-
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-dark-100 border border-slate-600 rounded-xl px-4 py-3">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
-                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
+    <div className="flex gap-6 max-w-6xl mx-auto">
+      {/* Conversation Sidebar */}
+      <div className="w-56 flex-shrink-0">
+        <button onClick={startNewChat} className="w-full btn-secondary mb-4 text-sm">
+          + สนทนาใหม่
+        </button>
+        <div className="space-y-2">
+          {conversations.map(c => (
+            <button
+              key={c.id}
+              onClick={() => loadConversation(c.id)}
+              className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
+                activeConvId === c.id
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-dark-100 text-slate-300 hover:bg-dark-200'
+              }`}
+            >
+              <div className="truncate font-medium">{c.title || 'สนทนาใหม่'}</div>
+              {c.updated_at && (
+                <div className="text-slate-400 mt-0.5 text-[10px]">
+                  {new Date(c.updated_at).toLocaleDateString('th-TH')}
                 </div>
-              </div>
-            </div>
+              )}
+            </button>
+          ))}
+          {conversations.length === 0 && (
+            <p className="text-xs text-slate-500 text-center py-4">ยังไม่มีสนทนา</p>
           )}
         </div>
+      </div>
 
-        <form onSubmit={handleAsk} className="flex gap-3">
-          <input
-            type="text"
-            value={question}
-            onChange={e => setQuestion(e.target.value)}
-            placeholder="ถามคำถามกฎหมาย..."
-            className="input flex-1"
-            disabled={loading}
-          />
-          <button type="submit" disabled={loading || !question.trim()} className="btn-primary">
-            ส่ง
-          </button>
-        </form>
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col">
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold">💬 ถาม-ตอบกฎหมาย</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            {activeConvId ? 'สนทนา # ' + activeConvId.slice(0, 8) : 'สนทนาใหม่'}
+            {latency && <span className="ml-3">⏱ {latency}ms</span>}
+          </p>
+        </div>
+
+        <div className="card min-h-[400px] flex flex-col mb-4">
+          <div className="flex-1 space-y-4 mb-4 overflow-y-auto">
+            {messages.length === 0 && (
+              <div className="text-center text-slate-500 py-12">
+                <p className="text-4xl mb-3">⚖️</p>
+                <p>เริ่มต้นถามคำถามกฎหมายได้เลย</p>
+                <p className="text-sm mt-1">เช่น "พ.ร.บ. ข้อมูลข่าวสาร มาตรา 7 บอกอะไร?"</p>
+              </div>
+            )}
+
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] rounded-xl px-4 py-3 ${
+                  msg.role === 'user' ? 'bg-primary-600 text-white' :
+                  msg.role === 'error' ? 'bg-red-900/50 text-red-300 border border-red-700' :
+                  'bg-dark-100 text-slate-100 border border-slate-600'
+                }`}>
+                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                  {msg.role === 'assistant' && i === messages.length - 1 && !loading && latency && (
+                    <p className="text-xs text-slate-400 mt-1">⏱ {latency}ms</p>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-dark-100 border border-slate-600 rounded-xl px-4 py-3">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
+                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }} />
+                    <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={handleAsk} className="flex gap-3">
+            <input
+              type="text"
+              value={question}
+              onChange={e => setQuestion(e.target.value)}
+              placeholder="ถามคำถามกฎหมาย..."
+              className="input flex-1"
+              disabled={loading}
+            />
+            <button type="submit" disabled={loading || !question.trim()} className="btn-primary">
+              ส่ง
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )
